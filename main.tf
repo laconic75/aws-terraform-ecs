@@ -20,7 +20,7 @@ resource "aws_vpc" "container_vpc" {
   enable_dns_hostnames = true 
 
   tags {
-    Name = "Containers"
+    Name = "${var.vpc-name}"
   }
 }
 
@@ -29,7 +29,7 @@ resource "aws_subnet" "container_subnet" {
   cidr_block           = "172.31.0.0/28"
   
   tags {
-    Name = "Containers"
+    Name = "${var.subnet-name}"
   }
 }
 
@@ -37,7 +37,7 @@ resource "aws_internet_gateway" "container_gateway" {
   vpc_id               = "${aws_vpc.container_vpc.id}"
 
   tags {
-    Name = "Containers"
+    Name = "${var.gateway-name}"
   }
 }
 
@@ -51,7 +51,7 @@ resource "aws_route" "default_conatainer_route" {
 ########################
 
 resource "aws_security_group" "weave_demo" {
-  name        = "weave_demo"
+  name        = "${var.security-group-name}"
   description = "Weave Demo"
   vpc_id      = "${aws_vpc.container_vpc.id}"
 }
@@ -140,78 +140,33 @@ resource "aws_security_group_rule" "fast_dp" {
 ########################
 
 resource "aws_iam_role" "weave_ecs_role" {
-  name       = "weave-ecs-role"
-  assume_role_policy = <<EOF
-{
-    "Version": "2012-10-17",
-    "Statement": {
-	"Effect": "Allow",
-	"Principal": {"Service": "ec2.amazonaws.com"},
-	"Action": "sts:AssumeRole"
-    }
-}
-EOF
+  name       = "${var.role-name}"
+ assume_role_policy = "${file("data/weave-ecs-role.json")}"
 }
 
 resource "aws_iam_role_policy" "weave_ecs_policy" {
-  name       = "weave-ecs-policy"
+  name       = "${var.policy-name}"
   role       = "${aws_iam_role.weave_ecs_role.name}"
-  policy     = <<EOF
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "ecs:CreateCluster",
-                "ecs:DeregisterContainerInstance",
-                "ecs:DiscoverPollEndpoint",
-                "ecs:Poll",
-                "ecs:RegisterContainerInstance",
-                "ecs:Submit*",
-                "ecs:ListClusters",
-                "ecs:ListContainerInstances",
-                "ecs:DescribeContainerInstances",
-                "ecs:ListServices",
-                "ecs:DescribeTasks",
-                "ecs:DescribeServices",
-                "ec2:DescribeInstances",
-                "ec2:DescribeTags",
-                "autoscaling:DescribeAutoScalingInstances",
-                "ecr:GetAuthorizationToken",
-                "ecr:BatchCheckLayerAvailability",
-                "ecr:GetDownloadUrlForLayer",
-                "ecr:BatchGetImage",
-                "logs:CreateLogStream",
-                "logs:PutLogEvents"
-            ],
-            "Resource": [
-                "*"
-            ]
-        }
-    ]
-}
-EOF
+  policy     = "${file("data/weave-ecs-policy.json")}"
 }
 
 resource "aws_iam_instance_profile" "weave_ecs_instance_profile" {
-  name       = "weave-ecs-instance-profile"
+  name       = "${var.instance-profile-name}"
   role       = "${aws_iam_role.weave_ecs_role.name}"
 }
 
-# ECS Settings
+# ECS and EC2
 ########################
 resource "aws_ecs_cluster" "weave_example" {
-  name = "weave-ecs-demo-cluster"
+  name = "${var.cluster-name}"
 }
 
 resource "aws_launch_configuration" "weave_ecs_lc" {
-  name                        = "weave-ecs-lc"
+  name                        = "${var.launch-configuration-name}"
   image_id                    = "ami-cc6c71b7"
   key_name                    = "weave-ecs-demo-key"
   security_groups             = ["${aws_security_group.weave_demo.id}"]
   instance_type               = "t2.micro"
-  # user_data                   = "echo ECS_CLUSTER=weave-ecs-demo-cluster >> /etc/ecs/ecs.config && echo SERVICE_TOKEN=mgzw6bgd7omegegi64a84ytwtgrq3bzi >> /etc/weave/scope.config"
   user_data                   = "${file("user_data.sh")}"
   iam_instance_profile        = "${aws_iam_instance_profile.weave_ecs_instance_profile.id}"
   associate_public_ip_address = true
@@ -219,7 +174,7 @@ resource "aws_launch_configuration" "weave_ecs_lc" {
 }
 
 resource "aws_autoscaling_group" "weave_ecs_demo" {
-  name                        = "weave-ecs-demo-group"
+  name                        = "${var.auto-scaling-group-name}"
   launch_configuration        = "${aws_launch_configuration.weave_ecs_lc.name}"
   min_size                    = 3
   max_size                    = 3
@@ -228,12 +183,12 @@ resource "aws_autoscaling_group" "weave_ecs_demo" {
 }
 
 resource "aws_ecs_task_definition" "weave_demo" {
-  family     = "weave-ecs-demo-task"
+  family     = "${var.task-name}"
   container_definitions = "${file("data/weave-ecs-demo-containers.json")}"
 }
 
 resource "aws_ecs_service" "weave_demo" {
-  name       = "weave-ecs-demo-service"
+  name       = "${var.service-name}"
   cluster    = "${aws_ecs_cluster.weave_example.id}"
   task_definition = "${aws_ecs_task_definition.weave_demo.arn}"
   desired_count   = 3
